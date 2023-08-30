@@ -1,28 +1,74 @@
-fn glob(pattern: &str, text: &str) -> bool {
-    let mut pattern = pattern.chars().peekable();
-    let mut text = text.chars().peekable();
+use std::process::exit;
 
-    while pattern.peek().is_some() && text.peek().is_some() {
-        match pattern.peek().unwrap() {
+fn inner_glob(pattern: &str, text: &str, mut p_idx: usize, mut t_idx: usize) -> bool {
+    let p_chars: Vec<char> = pattern.chars().collect();
+    let t_chars: Vec<char> = text.chars().collect();
+
+    while p_idx < p_chars.len() && t_idx < t_chars.len() {
+        match p_chars[p_idx] {
+            '?' => {
+                p_idx += 1;
+                t_idx += 1;
+            }
             '*' => {
-                text.next();
-                pattern.next();
+                if inner_glob(pattern, text, p_idx + 1, t_idx) {
+                    return true;
+                }
+                t_idx += 1;
+            }
+            '[' => {
+                p_idx += 1;
+                while p_chars[p_idx] != ']' {
+                    if p_chars[p_idx] == t_chars[t_idx] {
+                        p_idx += 1;
+                        t_idx += 1;
+                        break;
+                    }
+                    p_idx += 1;
+                }
             },
-            '?' => panic!("Not implemented yet"),
-            '[' => panic!("Not implemented yet"),
             _ => {
-                if pattern.peek() != text.peek() {
+                if p_chars[p_idx] != t_chars[t_idx] {
                     return false;
                 }
-                text.next();
-                pattern.next();
-            },
+                p_idx += 1;
+                t_idx += 1;
+            }
         }
     }
-    return pattern.peek().is_none() && text.peek().is_none();
+    if t_idx >= t_chars.len() {
+        while let Some('*') = p_chars.get(p_idx) {
+            p_idx += 1;
+        }
+        return p_idx >= p_chars.len();
+    }
+    false
+}
+
+fn glob(pattern: &str, text: &str) -> bool {
+    inner_glob(pattern, text, 0, 0)
+}
+
+fn check_glob(pattern: &str, text: &str, expected: bool) {
+    let out: bool = glob(pattern, text);
+    println!("{:>15} <=> {:15} = {}", pattern, text, out);
+    if out != expected {
+        eprintln!("FAILURE! Expected {}", expected);
+        exit(1);
+    }
 }
 
 fn main() {
-    let res: bool = glob("Hello", "*ello");
-    println!("{:?}", res);
+    check_glob("main.?", "main.c", true);
+    println!();
+    check_glob("*.c", "main.c", true);
+    check_glob("*", "main.c", true);
+    check_glob("*Law*", "LaLawyer", true);
+    check_glob("*Law*", "GrokLaw", true);
+    check_glob("*Law*", "Laws", true);
+    println!();
+    check_glob("*.[abc]", "main.a", true);
+    check_glob("*.[abc]", "main.b", true);
+    check_glob("*.[abc]", "main.c", true);
+    check_glob("*.[abc]", "main.d", false);
 }
