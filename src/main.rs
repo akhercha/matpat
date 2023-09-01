@@ -4,10 +4,5 @@ mod glob_result;
 use glob::glob;
 
 fn main() {
-    println!("{}", glob("*.[abc", "main.a"));
+    println!("{}", glob("[][-", "]"));
 }
-
-// *.[abc      main.a
-// ^           ^
-// ^          ^
-// ^          ^
