@@ -146,6 +146,11 @@ fn test_range() {
     assert_eq!(glob("[]-]", "]"), GlobResult::Matched);
     assert_eq!(glob("[]-]", "-"), GlobResult::Matched);
     assert_eq!(glob("[]-]", "a"), GlobResult::Unmatched);
+    assert_eq!(glob("[--0]", "-"), GlobResult::Matched);
+    assert_eq!(glob("[--0]", "."), GlobResult::Matched);
+    assert_eq!(glob("[--0]", "0"), GlobResult::Matched);
+    assert_eq!(glob("[--0]", "/"), GlobResult::Matched);
+    assert_eq!(glob("[--0]", "a"), GlobResult::Unmatched);
 }
 
 #[test]
