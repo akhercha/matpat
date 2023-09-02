@@ -1,4 +1,61 @@
-use super::glob_result::GlobResult;
+use std::fmt;
+use std::ops::Not;
+
+#[derive(Debug, Clone, Copy)]
+pub enum GlobResult {
+    Unmatched = 0,
+    Matched,
+    SyntaxError,
+}
+
+impl PartialEq for GlobResult {
+    fn eq(&self, other: &Self) -> bool {
+        matches!(
+            (self, other),
+            (GlobResult::Matched, GlobResult::Matched)
+                | (GlobResult::Unmatched, GlobResult::Unmatched)
+                | (GlobResult::SyntaxError, GlobResult::SyntaxError)
+        )
+    }
+}
+
+impl Not for GlobResult {
+    type Output = Self;
+
+    fn not(self) -> Self::Output {
+        match self {
+            Self::Matched => Self::Unmatched,
+            Self::Unmatched => Self::Matched,
+            Self::SyntaxError => Self::SyntaxError,
+        }
+    }
+}
+
+impl From<bool> for GlobResult {
+    fn from(b: bool) -> Self {
+        if b {
+            GlobResult::Matched
+        } else {
+            GlobResult::Unmatched
+        }
+    }
+}
+
+impl From<GlobResult> for bool {
+    fn from(gr: GlobResult) -> Self {
+        gr == GlobResult::Matched || gr == GlobResult::SyntaxError
+    }
+}
+
+impl fmt::Display for GlobResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            GlobResult::Unmatched => write!(f, "GLOB_UNMATCHED"),
+            GlobResult::Matched => write!(f, "GLOB_MATCHED"),
+            GlobResult::SyntaxError => write!(f, "GLOB_SYNTAX_ERROR"),
+        }
+    }
+}
 
 fn inner_glob(pattern: &str, text: &str, mut p_idx: usize, mut t_idx: usize) -> GlobResult {
     let p_chars: Vec<char> = pattern.chars().collect();
@@ -24,6 +81,17 @@ fn inner_glob(pattern: &str, text: &str, mut p_idx: usize, mut t_idx: usize) -> 
                 if p_idx >= p_chars.len() {
                     return GlobResult::SyntaxError;
                 }
+
+                let mut negate: bool = false;
+                if p_chars[p_idx] == '!' {
+                    negate = true;
+                    p_idx += 1;
+                }
+
+                if p_idx >= p_chars.len() {
+                    return GlobResult::SyntaxError;
+                }
+
                 is_match |= p_chars[p_idx] == t_chars[t_idx];
                 let mut prev_char: char = p_chars[p_idx];
                 p_idx += 1;
@@ -55,6 +123,9 @@ fn inner_glob(pattern: &str, text: &str, mut p_idx: usize, mut t_idx: usize) -> 
                 if p_idx >= p_chars.len() || p_chars[p_idx] != ']' {
                     return GlobResult::SyntaxError;
                 }
+                if negate {
+                    is_match = !is_match;
+                }
                 if !is_match {
                     return GlobResult::Unmatched;
                 }
@@ -62,6 +133,12 @@ fn inner_glob(pattern: &str, text: &str, mut p_idx: usize, mut t_idx: usize) -> 
                 t_idx += 1;
             }
             _ => {
+                if p_chars[p_idx] == '\\' {
+                    p_idx += 1;
+                    if p_idx >= p_chars.len() {
+                        return GlobResult::SyntaxError;
+                    }
+                }
                 if p_chars[p_idx] == t_chars[t_idx] {
                     p_idx += 1;
                     t_idx += 1;
@@ -143,6 +220,10 @@ fn test_range() {
     assert_eq!(glob("[A-Fa-f0-9]", "2"), GlobResult::Matched);
     assert_eq!(glob("[A-Fa-f0-9]", "9"), GlobResult::Matched);
     assert_eq!(glob("[A-Fa-f0-9]", "-"), GlobResult::Unmatched);
+}
+
+#[test]
+fn test_strange_unix_ppl() {
     assert_eq!(glob("[]-]", "]"), GlobResult::Matched);
     assert_eq!(glob("[]-]", "-"), GlobResult::Matched);
     assert_eq!(glob("[]-]", "a"), GlobResult::Unmatched);
@@ -151,12 +232,32 @@ fn test_range() {
     assert_eq!(glob("[--0]", "0"), GlobResult::Matched);
     assert_eq!(glob("[--0]", "/"), GlobResult::Matched);
     assert_eq!(glob("[--0]", "a"), GlobResult::Unmatched);
+    assert_eq!(glob("[!]a-]", "b"), GlobResult::Matched);
+    assert_eq!(glob("[!]a-]", "]"), GlobResult::Unmatched);
+    assert_eq!(glob("[!]a-]", "a"), GlobResult::Unmatched);
+    assert_eq!(glob("[!]a-]", "-"), GlobResult::Unmatched);
+    assert_eq!(glob("[[?*\\]", "["), GlobResult::Matched);
+    assert_eq!(glob("[[?*\\]", "?"), GlobResult::Matched);
+    assert_eq!(glob("[[?*\\]", "*"), GlobResult::Matched);
+    assert_eq!(glob("[[?*\\]", "\\"), GlobResult::Matched);
+    assert_eq!(glob("[[?*\\]", "a"), GlobResult::Unmatched);
+    assert_eq!(glob("\\*", "*"), GlobResult::Matched);
 }
 
 #[test]
-fn test_glob() {
-    assert_eq!(glob("*.[abc]", "main.a"), GlobResult::Matched);
-    assert_eq!(glob("*.[abc]", "main.b"), GlobResult::Matched);
-    assert_eq!(glob("*.[abc]", "main.c"), GlobResult::Matched);
-    assert_eq!(glob("*.[abc]", "main.d"), GlobResult::Unmatched);
+fn test_unicode() {
+    assert_eq!(glob("[😀-🤔]", "😉"), GlobResult::Matched);
+    assert_eq!(glob("Hello *", "Hello 😀"), GlobResult::Matched);
+    assert_eq!(glob("哈*", "哈罗世界"), GlobResult::Matched);
+    assert_eq!(glob("*🤔*", "😀🤔😀"), GlobResult::Matched);
+    assert_eq!(glob("👋?", "👋🏽"), GlobResult::Matched);
+    assert_eq!(glob("こんにちは*", "こんにちは世界"), GlobResult::Matched);
+    assert_eq!(glob("[а-я]*", "привет"), GlobResult::Matched);
+    assert_eq!(glob("?", "ß"), GlobResult::Matched);
+    assert_eq!(glob("*", "✈️"), GlobResult::Matched);
+    assert_eq!(glob("👋*", "👍"), GlobResult::Unmatched);
+    assert_eq!(glob("こんにちは*", "こんばんは世界"), GlobResult::Unmatched);
+    assert_eq!(glob("ß*", "β"), GlobResult::Unmatched);
+    assert_eq!(glob("[😀-🤔", "😀"), GlobResult::SyntaxError);
+    assert_eq!(glob("\\", "😀"), GlobResult::SyntaxError);
 }
