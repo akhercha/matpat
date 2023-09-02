@@ -75,7 +75,7 @@ fn inner_glob(pattern: &str, text: &str, mut p_idx: usize, mut t_idx: usize) -> 
                 t_idx += 1;
             }
             '[' => {
-                p_idx += 1; // skip '['
+                p_idx += 1;
                 let mut is_match = false;
 
                 if p_idx >= p_chars.len() {
